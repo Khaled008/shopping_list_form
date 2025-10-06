@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shopping_list_form/data/categories.dart';
 import 'package:shopping_list_form/models/category.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:shopping_list_form/models/grocery_item.dart';
 
 class NewItem extends StatefulWidget {
   const NewItem({super.key});
@@ -20,58 +22,39 @@ class _NewItemState extends State<NewItem> {
   void _saveItem() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
-
       setState(() {
         _isSending = true;
       });
 
-      try {
-        final supabase = Supabase.instance.client;
+      final url = Uri.https('flutter-list-b6729-default-rtdb.firebaseio.com',
+          'shopping-list.json');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(
+          {
+            'name': _enteredName,
+            'quantity': _enteredQuantity,
+            'category': _selectedCategory.title,
+          },
+        ),
+      );
 
-        await supabase.from('shopping_list').insert({
-          'name': _enteredName,
-          'quantity': _enteredQuantity,
-          'category': _selectedCategory.title,
-        });
-
-        if (!mounted) return;
-
-        // Navigate back after successful save
-        Navigator.of(context).pop();
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Item added successfully!'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } catch (error) {
-        if (!mounted) return;
-
-        setState(() {
-          _isSending = false;
-        });
-
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to add item: $error'),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.red,
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> resData = json.decode(response.body);
+        if (!mounted) {
+          return;
+        }
+        Navigator.of(context).pop(
+          GroceryItem(
+            id: resData['name'],
+            name: _enteredName,
+            quantity: _enteredQuantity,
+            category: _selectedCategory,
           ),
         );
       }
     }
-  }
-
-  void _resetForm() {
-    _formKey.currentState!.reset();
-    setState(() {
-      _enteredQuantity = 1;
-      _selectedCategory = categories[Categories.vegetables]!;
-    });
   }
 
   @override
@@ -112,8 +95,8 @@ class _NewItemState extends State<NewItem> {
                         decoration: const InputDecoration(
                           label: Text('Quantity'),
                         ),
-                        initialValue: '1',
                         keyboardType: TextInputType.number,
+                        initialValue: '1',
                         validator: (value) {
                           if (value == null ||
                               value.isEmpty ||
@@ -163,7 +146,11 @@ class _NewItemState extends State<NewItem> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      onPressed: _isSending ? null : _resetForm,
+                      onPressed: _isSending
+                          ? null
+                          : () {
+                              _formKey.currentState!.reset();
+                            },
                       child: const Text('Reset'),
                     ),
                     ElevatedButton(
